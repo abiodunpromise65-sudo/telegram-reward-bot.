@@ -1,0 +1,4 @@
+python-telegram-bot==20.8
+sqlite3-to-mysql==1.4.10
+psycopg2-binary==2.9.9
+requests==2.31.0
