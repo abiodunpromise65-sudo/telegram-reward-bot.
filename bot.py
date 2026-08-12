@@ -448,4 +448,4 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # --- MAIN ENGINE ---
 
-def 
+def  
