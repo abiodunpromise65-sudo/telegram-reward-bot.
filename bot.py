@@ -448,4 +448,9 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # --- MAIN ENGINE ---
 
-def  
+    logging.info("🚀 Bot is running and connected to Telegram!")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+    
