@@ -1,4 +1,5 @@
 import logging
+import sys
 import re
 from telegram import (
     Update, ReplyKeyboardMarkup, KeyboardButton,
@@ -212,20 +213,22 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 # --- MAIN ENGINE ---
 
 def main():
+    if not config.BOT_TOKEN:
+        logging.critical("❌ ERROR: BOT_TOKEN is empty! Set BOT_TOKEN in Render Environment Settings.")
+        sys.exit(1)
+
     db.init_db()
     
     app = Application.builder().token(config.BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
-    
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_user_text_menu))
-    
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT, handle_group_message))
 
+    logging.info("🚀 Bot is running and connected to Telegram!")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-
     
