@@ -2,7 +2,7 @@ import logging
 import re
 from telegram import (
     Update, ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
+    InlineKeyboardMarkup, InlineKeyboardButton
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -59,7 +59,6 @@ async def handle_user_text_menu(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(f"👋 Main Menu\n💰 Balance: ${db_user['balance']:.3f}", reply_markup=get_main_keyboard(is_admin))
         
     elif text == "📱 Get Numbers":
-        # Hardcoded/Dynamic service list
         inline_kb = [
             [InlineKeyboardButton("🔷 WhatsApp • 266", callback_data="svc_whatsapp")],
             [InlineKeyboardButton("🔷 Telegram • 120", callback_data="svc_telegram")],
@@ -110,7 +109,7 @@ async def handle_user_text_menu(update: Update, context: ContextTypes.DEFAULT_TY
         help_text = (
             "ℹ️ *Help & Usage Information*\n\n"
             "• *Get Numbers*: Request available phone numbers for chosen services.\n"
-            "• *Copy Numbers*: Tap direct buttons below assigned numbers to copy.\n"
+            "• *Copy Numbers*: Tap direct numbers in message to copy.\n"
             "• *Rewards*: Automatic payout when OTP arrives in configured Reward Group.\n"
             "• *Change Numbers*: Release assigned numbers and fetch new ones.\n"
             "• *Withdraw*: Minimum threshold apply. Submit details for admin review."
@@ -120,7 +119,7 @@ async def handle_user_text_menu(update: Update, context: ContextTypes.DEFAULT_TY
     elif text == "👨‍💼 Admin Menu" and is_admin:
         await update.message.reply_text("👨‍💼 Admin Control Panel", reply_markup=get_admin_keyboard())
 
-# --- NUMBER DISPLAY WITH COPY-TEXT BUTTONS ---
+# --- NUMBER DISPLAY ---
 
 async def display_assigned_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, numbers: list):
     if not numbers:
@@ -135,17 +134,15 @@ async def display_assigned_numbers(update: Update, context: ContextTypes.DEFAULT
     text = f"📱 *ASSIGNED NUMBERS*\n\n{num_list_text}\n\nRemaining stock: 98"
 
     inline_buttons = []
-    # Native Telegram Copy-Text Buttons (Bot API 7.3+)
     for n in numbers:
         phone = n['phone_number']
         inline_buttons.append([
             InlineKeyboardButton(
                 text=f"📋 {phone}",
-                copy_text=CopyTextButton(text=phone)
+                callback_data=f"copy_{phone}"
             )
         ])
     
-    # Action Row Buttons
     inline_buttons.append([InlineKeyboardButton("🔄 Change Numbers", callback_data="act_change")])
     inline_buttons.append([
         InlineKeyboardButton("🌍 Change Country", callback_data="act_country"),
@@ -164,9 +161,15 @@ async def display_assigned_numbers(update: Update, context: ContextTypes.DEFAULT
 
 async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
     user_id = query.from_user.id
+
+    if data.startswith("copy_"):
+        copied_num = data.replace("copy_", "")
+        await query.answer(f"Copied: {copied_num}", show_alert=False)
+        return
+
+    await query.answer()
 
     if data.startswith("svc_") or data == "act_change":
         assigned = db.assign_numbers(user_id, service="whatsapp", count=3)
@@ -189,10 +192,8 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         matched_stock, reward_price, phone = result
         credited_user_id = matched_stock['assigned_user_id']
         
-        # Get updated user info
         db_user = db.get_or_create_user(credited_user_id, "")
         
-        # Send Private Notification to User
         notify_msg = (
             f"🎉 *Reward Received!*\n\n"
             f"📱 Number: `{phone}`\n"
@@ -215,18 +216,16 @@ def main():
     
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # Handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     
-    # Text menu handler for private messages
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_user_text_menu))
     
-    # Group message listener for OTP / Reward group
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT, handle_group_message))
 
     app.run_polling()
 
 if __name__ == "__main__":
     main()
+
     
