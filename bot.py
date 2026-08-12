@@ -8,12 +8,16 @@ from telegram import (
 )
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters
+    CallbackQueryHandler, ContextTypes, filters,
+    ConversationHandler
 )
 import config
 import database as db
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# --- CONVERSATION STATES ---
+WAIT_FOR_STOCK = 1
 
 # --- KEYBOARDS ---
 
@@ -121,6 +125,67 @@ async def handle_user_text_menu(update: Update, context: ContextTypes.DEFAULT_TY
     elif text == "👨‍💼 Admin Menu" and is_admin:
         await update.message.reply_text("👨‍💼 Admin Control Panel", reply_markup=get_admin_keyboard())
 
+# --- ADMIN STOCK UPLOADER FLOW ---
+
+async def upload_stock_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in config.ADMIN_IDS:
+        return ConversationHandler.END
+
+    msg = (
+        "📤 *Upload Stock*\n\n"
+        "Send the numbers now using one of these options:\n"
+        "1. Paste text directly (one number per line or separated by commas)\n"
+        "2. Upload a `.txt` file containing the numbers\n\n"
+        "Type `cancel` to abort."
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+    return WAIT_FOR_STOCK
+
+async def process_stock_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in config.ADMIN_IDS:
+        return ConversationHandler.END
+
+    raw_text = ""
+
+    # Check for text message
+    if update.message.text:
+        text = update.message.text.strip()
+        if text.lower() == "cancel" or text == "🏠 Main Menu":
+            await update.message.reply_text("❌ Upload cancelled.", reply_markup=get_admin_keyboard())
+            return ConversationHandler.END
+        raw_text = text
+
+    # Check for document (.txt file)
+    elif update.message.document:
+        doc = update.message.document
+        file = await context.bot.get_file(doc.file_id)
+        file_bytes = await file.download_as_bytearray()
+        raw_text = file_bytes.decode("utf-8", errors="ignore")
+
+    # Extract all phone numbers with regex
+    phone_numbers = re.findall(r'\+?\d{7,15}', raw_text)
+
+    if not phone_numbers:
+        await update.message.reply_text("⚠️ No valid phone numbers detected. Please send text/file again or type `cancel`.", parse_mode="Markdown")
+        return WAIT_FOR_STOCK
+
+    # Save to database
+    added_count = db.add_stock_bulk(phone_numbers)
+
+    summary_msg = (
+        f"✅ *Stock Uploaded Successfully!*\n\n"
+        f"• Total Found: `{len(phone_numbers)}`\n"
+        f"• Added to Database: `{added_count}` new numbers"
+    )
+    await update.message.reply_text(summary_msg, parse_mode="Markdown", reply_markup=get_admin_keyboard())
+    return ConversationHandler.END
+
+async def cancel_stock_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Upload cancelled.", reply_markup=get_admin_keyboard())
+    return ConversationHandler.END
+
 # --- NUMBER DISPLAY ---
 
 async def display_assigned_numbers(update: Update, context: ContextTypes.DEFAULT_TYPE, numbers: list):
@@ -218,7 +283,6 @@ def main():
         logging.critical("❌ ERROR: BOT_TOKEN is empty! Set BOT_TOKEN in Render Environment Settings.")
         sys.exit(1)
 
-    # Explicit event loop setup for modern Python versions
     try:
         asyncio.get_event_loop()
     except RuntimeError:
@@ -229,7 +293,20 @@ def main():
     
     app = Application.builder().token(config.BOT_TOKEN).build()
 
+    # Stock upload handler
+    stock_conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📤 Upload Stock$"), upload_stock_start)],
+        states={
+            WAIT_FOR_STOCK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, process_stock_input),
+                MessageHandler(filters.Document.ALL, process_stock_input)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_stock_upload)]
+    )
+
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(stock_conv_handler)
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_user_text_menu))
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT, handle_group_message))
@@ -239,5 +316,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                                   
-    
+            
