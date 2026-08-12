@@ -1,6 +1,7 @@
 import logging
 import sys
 import re
+import asyncio
 from telegram import (
     Update, ReplyKeyboardMarkup, KeyboardButton,
     InlineKeyboardMarkup, InlineKeyboardButton
@@ -217,6 +218,13 @@ def main():
         logging.critical("❌ ERROR: BOT_TOKEN is empty! Set BOT_TOKEN in Render Environment Settings.")
         sys.exit(1)
 
+    # Explicit event loop setup for modern Python versions
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     db.init_db()
     
     app = Application.builder().token(config.BOT_TOKEN).build()
@@ -231,5 +239,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
+                                   
     
